@@ -1,0 +1,117 @@
+app-id: com.github.cross_platform.iCloudForLinux
+base: org.electronjs.Electron2.BaseApp
+base-version: '22.08'
+runtime: org.freedesktop.Platform.VaInfo/x86_64/22.08
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+    - org.freedesktop.Sdk.Extension.node18
+command: entrypoint.sh
+
+separate-locales: false
+
+finish-args:
+    - --filesystem=home
+    - --share=ipc
+    - --socket=wayland
+    - --socket=fallback-x11
+    - --share=network
+    - --device=dri
+    - --socket=pulseaudio
+    - --socket=system-bus
+    - --talk-name=org.freedesktop.DBus
+
+build-options:
+    build-args:
+        - --share=network
+    append-path: /usr/lib/sdk/node18/bin
+    env:
+        NPM_CONFIG_LOGLEVEL: info
+
+modules:
+    - shared-modules/dbus-glib/dbus-glib.json
+    - shared-modules/libcanberra/libcanberra.json
+
+    - name: appmenu-gtk-module
+      buildsystem: meson
+      sources:
+          - type: git
+            url: https://gitlab.gnome.org/GNOME/gtk.git
+            tag: "3.24.37"
+      config-opts:
+          - -Dx11_backend=true
+          - -Dgtk_doc=false
+          - -Dman=false
+          - -Dintrospection=false
+          - -Dtests=false
+          - -Dexamples=false
+          - -Ddemos=false
+
+    - name: pipewire-pulseaudio
+      buildsystem: simple
+      build-commands:
+          - meson build
+          - ninja -C build
+      sources:
+          - type: git
+            url: https://gitlab.freedesktop.org/pipewire/pipewire.git
+            tag: 0.3.69
+      config-opts:
+          - -Dpulseaudio=true
+
+    - name: icloud-for-linux
+      buildsystem: simple
+      build-options:
+          env:
+              XDG_CACHE_HOME: /run/build/icloud-for-linux/flatpak-node/cache
+              npm_config_cache: /run/build/icloud-for-linux/flatpak-node/npm-cache
+              PATH: "/app/lib/nodejs:/app/lib/nodejs/bin:/usr/bin:/run/build/icloud-for-linux/node_modules/.bin"
+              ELECTRON_DISABLE_SUID_SANDBOX: "1"
+      build-commands:
+          - npm install electron electron-packager
+          - chmod +x builder.sh
+          - ./builder.sh
+          #    sources:
+          #      - type: git
+          #        url: https://github.com/jstayco/icloud-for-linux-flatpak.git
+          #        commit: 949b3d75ba270b24ad3ec362c20b3028245630e1
+          #      - type: file
+          #        path: builder.sh
+      sources:
+          - type: dir
+            path: ../
+            dest: icloud-for-linux
+          - type: file
+            path: builder.sh
+          - type: script
+            dest-filename: entrypoint.sh
+            commands:
+                - zypak-wrapper.sh /app/icloud-for-linux/icloud-for-linux -- --no-sandbox "$@"
+
+    - name: desktop-files-and-icons
+      buildsystem: simple
+      build-commands:
+          - install -Dm644 ./*.desktop -t /app/share/applications/
+          - install -Dm644 ./*.png -t /app/share/icons/hicolor/64x64/apps/
+      sources:
+          - type: dir
+            path: ./gui
+
+    - name: run-scripts
+      buildsystem: simple
+      build-commands:
+          - install -Dm755 entrypoint.sh /app/bin/entrypoint.sh
+      sources:
+          - type: file
+            path: entrypoint.sh
+
+cleanup:
+    - /include
+    - /lib/pkgconfig
+    - /share/pkgconfig
+    - /share/aclocal
+    - /man
+    - /share/man
+    - /share/gtk-doc
+    - /share/vala
+    - "*.la"
+    - "*.a"
